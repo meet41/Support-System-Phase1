@@ -1,0 +1,1224 @@
+================================================================================
+COMPLETE APPLICATION WORKING FLOW & GUIDE
+Support System Phase 1 - AI-Based Customer Support System
+================================================================================
+
+TABLE OF CONTENTS
+────────────────────────────────────────────────────────────────────────────
+1. System Overview
+2. Installation & Setup
+3. Frontend Flow (Customer Journey)
+4. Backend Flow (Engineer Journey)
+5. Admin Flow (Admin Journey)
+6. All API Endpoints with Examples
+7. Error Scenarios & Solutions
+8. Database Structure
+9. Security & Authentication
+10. Complete Working Examples
+
+
+================================================================================
+SECTION 1: SYSTEM OVERVIEW
+================================================================================
+
+This is a FastAPI-based Customer Support System with:
+✅ Customer registration and authentication
+✅ Support engineer management
+✅ Admin controls
+✅ JWT token-based security
+✅ Role-based access control
+✅ MongoDB for data persistence
+✅ Real-time API documentation (Swagger UI)
+
+
+USERS IN THE SYSTEM
+────────────────────────────────────────────────────────────────────────────
+
+1. CUSTOMER (customer type)
+   - Can register and login
+   - Can view own profile (/api/customer/me)
+   - Can create and manage support tickets (future)
+   - Cannot access engineer endpoints
+
+2. SUPPORT ENGINEER (engineer type, role_id=2)
+   - Registered only by admin
+   - Can login and view profile (/api/engineer/me)
+   - Can take and resolve tickets (future)
+   - Cannot register other engineers
+
+3. ADMIN (engineer type, role_id=1)
+   - Created using /bootstrap/admin endpoint (first time)
+   - Can login as engineer
+   - Can register new support engineers
+   - Can view all support tickets (future)
+   - Has highest permissions
+
+
+================================================================================
+SECTION 2: INSTALLATION & SETUP
+================================================================================
+
+STEP 1: Ensure MongoDB is Running
+─────────────────────────────────
+MongoDB must be running on localhost:27017 (default)
+
+STEP 2: Start the API Server
+─────────────────────────────
+cd "E:\A Simprosys Intern Project\support-system-phase1\support-system-phase1"
+python -m uvicorn app.main:app --reload
+
+Expected Console Output:
+INFO:     Started server process [12345]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete [in 0.50s]
+Uvicorn running on http://127.0.0.1:8000
+✅ Connected to MongoDB
+
+STEP 3: Access Swagger UI
+──────────────────────────
+Open browser: http://localhost:8000/docs
+
+You should see interactive API documentation with all endpoints!
+
+
+================================================================================
+SECTION 3: CUSTOMER JOURNEY (COMPLETE FLOW)
+================================================================================
+
+A CUSTOMER'S EXPERIENCE FROM START TO FINISH
+
+
+FLOW 1: CUSTOMER REGISTRATION
+────────────────────────────────────────────────────────────────────────────
+
+What the customer wants:
+  → Create a new account to access support
+
+Endpoint: POST /api/customer/register
+
+REQUEST INPUT:
+{
+  "name": "Sarah Johnson",
+  "email": "sarah.johnson@company.com",
+  "password": "SecurePass123"
+}
+
+VALIDATION:
+✓ Name: 2-100 characters
+✓ Email: Valid email format, must be unique
+✓ Password: Minimum 8 characters, must be secure
+
+RESPONSE (201 Created):
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInR5cGUiOiJjdXN0b21lciIsImVtYWlsIjoic2FyYWguam9obm...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInR5cGUiOiJjdXN0b21lciIsImV4cCI6MTYxNTMwMDAwMH0...",
+  "token_type": "bearer",
+  "user": {
+    "customer_id": 1,
+    "name": "Sarah Johnson",
+    "email": "sarah.johnson@company.com",
+    "is_active": true,
+    "created_at": "2026-04-01T10:30:00",
+    "last_login": null
+  }
+}
+
+What happens in the backend:
+1. System checks if email already exists → No (good!)
+2. System generates next customer_id (1)
+3. Password is hashed with bcrypt
+4. Customer document created in MongoDB
+5. Access and refresh tokens generated
+6. Tokens returned to customer
+
+
+ERROR SCENARIOS FOR REGISTRATION:
+
+Error 1: Email already exists
+Request:
+{
+  "name": "Another User",
+  "email": "sarah.johnson@company.com",
+  "password": "AnotherPass123"
+}
+Response (400 Bad Request):
+{
+  "detail": "Email already registered"
+}
+
+Error 2: Password too short
+Request:
+{
+  "name": "John Doe",
+  "email": "john@company.com",
+  "password": "short"
+}
+Response (422 Unprocessable Entity):
+{
+  "detail": [{
+    "loc": ["body", "password"],
+    "msg": "ensure this value has at least 8 characters",
+    "type": "value_error"
+  }]
+}
+
+Error 3: Invalid email format
+Request:
+{
+  "name": "Jane Doe",
+  "email": "not_an_email",
+  "password": "ValidPass123"
+}
+Response (422 Unprocessable Entity):
+{
+  "detail": [{
+    "loc": ["body", "email"],
+    "msg": "invalid email format",
+    "type": "value_error"
+  }]
+}
+
+
+FLOW 2: CUSTOMER LOGIN
+────────────────────────────────────────────────────────────────────────────
+
+What the customer wants:
+  → Login to existing account to get access token
+
+Endpoint: POST /api/customer/login
+
+REQUEST INPUT:
+{
+  "email": "sarah.johnson@company.com",
+  "password": "SecurePass123"
+}
+
+PROCESS IN BACKEND:
+1. System finds customer by email
+2. System verifies password using bcrypt.verify()
+3. System checks if account is active
+4. System creates new access token
+5. System creates new refresh token
+6. System updates last_login time
+7. Returns tokens to customer
+
+RESPONSE (200 OK):
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInR5cGUiOiJjdXN0b21lciIsImVtYWlsIjoic2FyYWguam9obm...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInR5cGUiOiJjdXN0b21lciIsImV4cCI6MTYxNTMwMDAwMH0...",
+  "token_type": "bearer",
+  "user": {
+    "customer_id": 1,
+    "name": "Sarah Johnson",
+    "email": "sarah.johnson@company.com",
+    "is_active": true,
+    "created_at": "2026-04-01T10:30:00",
+    "last_login": "2026-04-01T10:35:00"
+  }
+}
+
+KEY NOTES:
+✓ last_login is updated to current time
+✓ Access token expires after 30 minutes
+✓ Refresh token lasts 7 days
+✓ If password correct but account inactive → 403 Forbidden
+
+
+ERROR SCENARIOS FOR LOGIN:
+
+Error 1: Wrong email
+Request:
+{
+  "email": "wrong@company.com",
+  "password": "SecurePass123"
+}
+Response (401 Unauthorized):
+{
+  "detail": "Invalid email or password"
+}
+
+Error 2: Wrong password
+Request:
+{
+  "email": "sarah.johnson@company.com",
+  "password": "WrongPassword123"
+}
+Response (401 Unauthorized):
+{
+  "detail": "Invalid email or password"
+}
+
+Error 3: Account inactive
+(Scenario: Admin deactivated the account)
+Request:
+{
+  "email": "sarah.johnson@company.com",
+  "password": "SecurePass123"
+}
+Response (403 Forbidden):
+{
+  "detail": "Customer account is inactive"
+}
+
+
+FLOW 3: AUTHORIZE SWAGGER UI FOR PROTECTED REQUESTS
+────────────────────────────────────────────────────────────────────────────
+
+Now customer has a token and wants to use protected endpoints.
+
+ACTION: Click the green "Authorize" button at top-right of Swagger UI
+
+DIALOG APPEARS:
+- Field label: "value*"
+- Input field (empty)
+
+WHAT TO DO:
+1. Copy the access_token from login response (the very long string starting with "eyJ")
+2. In Swagger Authorize dialog, paste:
+   Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInR5cGUiOiJjdXN0b21lciIsImVtYWlsIjoic2FyYWguam9obm...
+
+   IMPORTANT:
+   - Must include "Bearer " prefix (with space)
+   - Must be the full token (very long string)
+   - Not the refresh token, must be access token
+
+3. Click the blue "Authorize" button
+4. Dialog closes - you're now authenticated!
+5. All protected endpoints now include your token in headers
+
+
+FLOW 4: GET CUSTOMER PROFILE (PROTECTED)
+────────────────────────────────────────────────────────────────────────────
+
+What the customer wants:
+  → View own profile information
+
+Endpoint: GET /api/customer/me
+
+REQUIREMENTS:
+✓ Must be authorized (Authorization: Bearer {access_token})
+✓ Token must be valid (not expired, correct type)
+
+REQUEST (No body needed):
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInR5cGU...
+
+PROCESS IN BACKEND:
+1. System extracts token from Authorization header
+2. System validates token (signature, expiration)
+3. System extracts customer_id from token payload
+4. System queries MongoDB for customer document
+5. System returns customer information
+
+RESPONSE (200 OK):
+{
+  "customer_id": 1,
+  "name": "Sarah Johnson",
+  "email": "sarah.johnson@company.com",
+  "is_active": true,
+  "created_at": "2026-04-01T10:30:00",
+  "last_login": "2026-04-01T10:35:00"
+}
+
+KEY NOTES:
+✓ Only customer can view own profile (token prevents unauthorized access)
+✓ created_at never changes
+✓ last_login updates each time customer logs in
+
+
+ERROR SCENARIOS FOR GET /me:
+
+Error 1: Missing authorization header
+Action: Click Execute without Authorize button
+Response (401 Unauthorized):
+{
+  "detail": "Missing Authorization header. Add header: Authorization: Bearer {token}"
+}
+
+Error 2: Invalid token format
+Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...  (missing "Bearer ")
+Response (401 Unauthorized):
+{
+  "detail": "Invalid Authorization header format. Use: Bearer {token}"
+}
+
+Error 3: Token expired
+(Scenario: More than 30 minutes have passed since login)
+Response (401 Unauthorized):
+{
+  "detail": "Invalid or expired token. Token may have expired (tokens expire after 30 minutes). Please login again."
+}
+
+Error 4: Using engineer token on customer endpoint
+(Scenario: Customer logged in with /api/engineer/login by mistake)
+Response (401 Unauthorized):
+{
+  "detail": "Invalid token type. Expected 'customer' but got 'engineer'. Use /api/customer/login endpoint."
+}
+
+Error 5: Token tampered with
+(Scenario: Someone modified the token)
+Response (401 Unauthorized):
+{
+  "detail": "Invalid or expired token. Token may have expired (tokens expire after 30 minutes). Please login again."
+}
+
+
+================================================================================
+SECTION 4: SUPPORT ENGINEER JOURNEY (COMPLETE FLOW)
+================================================================================
+
+A SUPPORT ENGINEER'S EXPERIENCE
+
+
+FLOW 1: CREATE FIRST ADMIN ACCOUNT
+────────────────────────────────────────────────────────────────────────────
+
+Before engineers can be registered, there must be an admin.
+This endpoint is ONLY available if NO admin exists yet.
+
+Endpoint: POST /bootstrap/admin
+
+REQUEST INPUT:
+{
+  "email": "admin@support.com",
+  "password": "Admin@123456",
+  "name": "System Administrator"
+}
+
+VALIDATION:
+✓ Email: Valid format, must be unique
+✓ Password: Minimum 8 characters
+✓ Name: Required
+
+PROCESS IN BACKEND:
+1. System checks if ANY admin exists (role_id = 1)
+2. If admin exists → return 403 Forbidden (can only create first admin once)
+3. If no admin exists:
+   - Check email not already used
+   - Hash password with bcrypt
+   - Create engineer document with:
+     * support_id: 100 (first admin ID)
+     * role_id: 1 (admin role)
+     * is_active: true
+     * created_at: current timestamp
+
+RESPONSE (201 Created):
+{
+  "message": "Admin user created successfully",
+  "user": {
+    "support_id": 100,
+    "name": "System Administrator",
+    "email": "admin@support.com",
+    "role_id": 1,
+    "department": "Administration",
+    "is_active": true,
+    "created_at": "2026-04-01T09:00:00"
+  }
+}
+
+KEY NOTES:
+✓ Only works if NO admin exists
+✓ After this, use normal /api/engineer/login
+✓ Admin then uses /api/engineer/register to create other engineers
+✓ Cannot be used to create second admin (403 Forbidden)
+
+
+ERROR SCENARIOS:
+
+Error 1: Admin already exists (trying to create second admin)
+Response (403 Forbidden):
+{
+  "detail": "Admin user already exists. This endpoint is only for initial setup."
+}
+
+Error 2: Email already registered
+Request:
+{
+  "email": "existing@support.com",
+  "password": "NewPass@123",
+  "name": "New Admin"
+}
+Response (400 Bad Request):
+{
+  "detail": "Email already registered"
+}
+
+Error 3: Password too short
+Request:
+{
+  "email": "admin2@support.com",
+  "password": "Short1",
+  "name": "Another Admin"
+}
+Response (400 Bad Request):
+{
+  "detail": "Password must be at least 8 characters long"
+}
+
+
+FLOW 2: ADMIN LOGIN
+────────────────────────────────────────────────────────────────────────────
+
+Endpoint: POST /api/engineer/login
+
+REQUEST INPUT:
+{
+  "email": "admin@support.com",
+  "password": "Admin@123456"
+}
+
+PROCESS IN BACKEND:
+1. System finds engineer by email
+2. System verifies password
+3. System checks if account is active
+4. System creates access token with type="engineer"
+5. System creates refresh token
+6. Returns tokens
+
+RESPONSE (200 OK):
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMCwidHlwZSI6ImVuZ2luZWVyIiwi...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMCwidHlwZSI6ImVuZ2luZWVyIiwi...",
+  "token_type": "bearer",
+  "user": {
+    "support_id": 100,
+    "name": "System Administrator",
+    "email": "admin@support.com",
+    "role_id": 1,
+    "department": "Administration",
+    "is_active": true,
+    "is_online": false,
+    "created_at": "2026-04-01T09:00:00",
+    "last_seen": "2026-04-01T09:05:00"
+  }
+}
+
+KEY NOTES:
+✓ role_id = 1 indicates this is admin
+✓ Token type = "engineer" (not "customer")
+✓ Can now use admin-only endpoints
+
+
+FLOW 3: AUTHORIZE WITH ADMIN TOKEN
+────────────────────────────────────
+
+ACTION: Click Authorize button (green, top-right)
+PASTE: Bearer {admin_access_token}
+CLICK: Authorize button
+
+Now all admin-only endpoints like /api/engineer/register will work!
+
+
+FLOW 4: REGISTER NEW SUPPORT ENGINEER (ADMIN ONLY)
+──────────────────────────────────────────────────────────────────────────────
+
+What the admin wants:
+  → Register a new support engineer to handle customer tickets
+
+Endpoint: POST /api/engineer/register
+
+REQUIREMENTS:
+✓ Caller must be authenticated as admin
+✓ Authorization header must contain admin token with role_id=1
+
+REQUEST INPUT:
+{
+  "name": "John Smith",
+  "email": "john.smith@support.com",
+  "password": "Engineer@P@ss123",
+  "department": "Technical Support"
+}
+
+VALIDATION:
+✓ Name: 2-100 characters
+✓ Email: Valid, unique
+✓ Password: Minimum 8 characters
+✓ Department: Text field
+
+PROCESS IN BACKEND:
+1. System extracts admin token from Authorization header
+2. System validates token (is engineer, not expired)
+3. System checks admin status in database (role_id must be 1)
+4. If not admin → 403 Forbidden
+5. If admin verified:
+   - Check email not already used
+   - Generate next support_id (101, 102, etc.)
+   - Hash password
+   - Create engineer document with:
+     * role_id: 2 (support engineer, not admin)
+     * is_active: true
+     * is_online: false
+   - Create and return tokens for new engineer
+
+RESPONSE (201 Created):
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMSwidHlwZSI6ImVuZ2luZWVyIiwi...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMSwidHlwZSI6ImVuZ2luZWVyIiwi...",
+  "token_type": "bearer",
+  "user": {
+    "support_id": 101,
+    "name": "John Smith",
+    "email": "john.smith@support.com",
+    "role_id": 2,
+    "department": "Technical Support",
+    "is_active": true,
+    "is_online": false,
+    "created_at": "2026-04-01T09:10:00",
+    "last_seen": "2026-04-01T09:10:00"
+  }
+}
+
+KEY NOTES:
+✓ support_id starts at 100 for admin, then 101, 102, etc. for engineers
+✓ New engineer has role_id=2 (support role, not admin)
+✓ Can immediately login with new credentials
+✓ Admin can use returned token to add more engineers
+
+
+ERROR SCENARIOS:
+
+Error 1: Caller is not admin
+(Scenario: Regular support engineer tries to register another engineer)
+Response (403 Forbidden):
+{
+  "detail": "Admin access required. Your role_id is 2, admin role_id is 1"
+}
+
+Error 2: Missing authorization
+(Scenario: No Authorization header provided)
+Response (401 Unauthorized):
+{
+  "detail": "Missing Authorization header. Add header: Authorization: Bearer {token}"
+}
+
+Error 3: Using customer token
+(Scenario: Admin forgets to re-authorize with engineer token)
+Response (401 Unauthorized):
+{
+  "detail": "Invalid token type. Expected 'engineer' but got 'customer'. Use /api/engineer/login endpoint."
+}
+
+Error 4: Email already registered
+Response (400 Bad Request):
+{
+  "detail": "Email already registered"
+}
+
+
+FLOW 5: ENGINEER LOGIN
+────────────────────────────────────────────────────────────────────────────
+
+New engineer can now login!
+
+Endpoint: POST /api/engineer/login
+
+REQUEST INPUT:
+{
+  "email": "john.smith@support.com",
+  "password": "Engineer@P@ss123"
+}
+
+RESPONSE (200 OK):
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user": {
+    "support_id": 101,
+    "name": "John Smith",
+    "email": "john.smith@support.com",
+    "role_id": 2,
+    "department": "Technical Support",
+    "is_active": true,
+    "is_online": false,
+    "created_at": "2026-04-01T09:10:00",
+    "last_seen": "2026-04-01T09:12:00"
+  }
+}
+
+
+FLOW 6: GET ENGINEER PROFILE (PROTECTED)
+───────────────────────────────────────────────────────────────────────────
+
+Endpoint: GET /api/engineer/me
+
+REQUIREMENTS:
+✓ Must be authorized with engineer token
+✓ Token must be valid and not expired
+
+RESPONSE (200 OK):
+{
+  "support_id": 101,
+  "name": "John Smith",
+  "email": "john.smith@support.com",
+  "role_id": 2,
+  "department": "Technical Support",
+  "is_active": true,
+  "is_online": false,
+  "created_at": "2026-04-01T09:10:00",
+  "last_seen": "2026-04-01T09:12:00"
+}
+
+
+================================================================================
+SECTION 5: ADMIN OPERATIONS SUMMARY
+================================================================================
+
+ADMIN-ONLY OPERATIONS:
+
+1. Create first admin (one time)
+   POST /bootstrap/admin
+   → No authorization needed (only works if no admin exists)
+
+2. Login as admin
+   POST /api/engineer/login
+   → Get admin token
+
+3. Register new engineers
+   POST /api/engineer/register
+   → Requires admin token
+   → Only admin can register engineers
+   → Creates engineers with role_id=2
+
+4. View all engineers (future)
+   GET /api/engineers/list
+   → Requires admin token
+
+5. Deactivate/manage engineers (future)
+   PATCH /api/engineers/{id}
+   → Requires admin token
+
+6. View analytics (future)
+   GET /api/analytics
+   → Requires admin token
+
+
+================================================================================
+SECTION 6: ALL API ENDPOINTS QUICK REFERENCE
+================================================================================
+
+PUBLIC ENDPOINTS (No authorization needed)
+─────────────────────────────────────────────────────────────────────────────
+
+1. POST /api/customer/register
+   Purpose: Create new customer account
+   Request: { name, email, password }
+   Response: 201 Created { access_token, refresh_token, user }
+
+2. POST /api/customer/login
+   Purpose: Login customer
+   Request: { email, password }
+   Response: 200 OK { access_token, refresh_token, user }
+
+3. POST /api/engineer/login
+   Purpose: Login engineer or admin
+   Request: { email, password }
+   Response: 200 OK { access_token, refresh_token, user }
+
+4. POST /bootstrap/admin
+   Purpose: Create first admin (one time only)
+   Request: { email, password, name }
+   Response: 201 Created { message, user }
+
+5. GET /
+   Purpose: API information
+   Request: None
+   Response: 200 OK { message, description, version, endpoints }
+
+6. GET /health
+   Purpose: Check API health
+   Request: None
+   Response: 200 OK { status, service }
+
+7. GET /docs
+   Purpose: Interactive Swagger API documentation
+   Request: None
+   Response: HTML page with Swagger UI
+
+
+PROTECTED ENDPOINTS (Authorization required)
+─────────────────────────────────────────────────────────────────────────────
+
+1. GET /api/customer/me
+   Authorization: Bearer {customer_token}
+   Purpose: Get current customer profile
+   Request: None (token in header)
+   Response: 200 OK { customer_id, name, email, is_active, created_at, last_login }
+
+2. GET /api/engineer/me
+   Authorization: Bearer {engineer_token}
+   Purpose: Get current engineer profile
+   Request: None (token in header)
+   Response: 200 OK { support_id, name, email, role_id, department, is_active, is_online, created_at, last_seen }
+
+3. POST /api/engineer/register
+   Authorization: Bearer {admin_token}
+   Purpose: Register new support engineer (admin only)
+   Request: { name, email, password, department }
+   Response: 201 Created { access_token, refresh_token, user }
+
+
+================================================================================
+SECTION 7: COMPLETE WORKING EXAMPLE SCENARIO
+================================================================================
+
+FULL SCENARIO: New company starts using the support system
+
+STEP 1: CREATE SYSTEM ADMIN (Day 1)
+─────────────────────────────────────
+
+Endpoint: POST /bootstrap/admin
+Request:
+{
+  "email": "admin@company-support.com",
+  "password": "AdminSecure@2026",
+  "name": "System Administrator"
+}
+
+Response (201):
+{
+  "message": "Admin user created successfully",
+  "user": {
+    "support_id": 100,
+    "name": "System Administrator",
+    "email": "admin@company-support.com",
+    "role_id": 1,
+    "department": "Administration",
+    "is_active": true,
+    "created_at": "2026-04-01T08:00:00"
+  }
+}
+
+Database now has:
+  support_engineers collection:
+  {
+    "_id": ObjectId("..."),
+    "support_id": 100,
+    "name": "System Administrator",
+    "email": "admin@company-support.com",
+    "password": "$2b$12$abcd...",  (hashed)
+    "role_id": 1,
+    "department": "Administration",
+    "is_active": true,
+    "is_online": false,
+    "created_at": 2026-04-01T08:00:00,
+    "last_seen": 2026-04-01T08:00:00
+  }
+
+
+STEP 2: ADMIN LOGIN
+──────────────────────
+
+Endpoint: POST /api/engineer/login
+Request:
+{
+  "email": "admin@company-support.com",
+  "password": "AdminSecure@2026"
+}
+
+Response (200):
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMCwidHlwZSI6ImVuZ2luZWVyIiwiZW1haWwiOiJhZG1pbkBjb21wYW55LXN1cHBvcnQuY29tIiwiZXhwIjoxNjE2NzQzNzAwLCJpYXQiOjE2MTY3NDAwMDB9.xyz...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMCwidHlwZSI6ImVuZ2luZWVyIiwiZXhwIjoxNjE5MzMyMDAwLCJ0eXBlIjoicmVmcmVzaCIsImlhdCI6MTYxNjc0MDAwMH0.xyz...",
+  "token_type": "bearer",
+  "user": {
+    "support_id": 100,
+    "name": "System Administrator",
+    "email": "admin@company-support.com",
+    "role_id": 1,
+    "department": "Administration",
+    "is_active": true,
+    "is_online": false,
+    "created_at": "2026-04-01T08:00:00",
+    "last_seen": "2026-04-01T08:05:00"
+  }
+}
+
+Admin saves the access_token for next step!
+
+
+STEP 3: AUTHORIZE IN SWAGGER UI
+─────────────────────────────────
+
+Admin opens Swagger UI at http://localhost:8000/docs
+Click green "Authorize" button
+Paste in dialog: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMCwidHlwZSI6ImVuZ2luZWVyIiwiZW1haWwiOiJhZG1pbkBjb21wYW55LXN1cHBvcnQuY29tIiwiZXhwIjoxNjE2NzQzNzAwLCJpYXQiOjE2MTY3NDAwMDB9.xyz...
+Click Authorize
+Close dialog
+
+
+STEP 4: REGISTER FIRST SUPPORT ENGINEER
+─────────────────────────────────────────
+
+Endpoint: POST /api/engineer/register
+Authorization: Bearer {admin_token} (already set in step 3)
+Request:
+{
+  "name": "Alice Support",
+  "email": "alice@company-support.com",
+  "password": "AlicePass@2026",
+  "department": "Technical Support"
+}
+
+Response (201):
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMSwidHlwZSI6ImVuZ2luZWVyIiwiZW1haWwiOiJhbGljZUBjb21wYW55...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMSwidHlwZSI6ImVuZ2luZWVyIiwi...",
+  "token_type": "bearer",
+  "user": {
+    "support_id": 101,
+    "name": "Alice Support",
+    "email": "alice@company-support.com",
+    "role_id": 2,
+    "department": "Technical Support",
+    "is_active": true,
+    "is_online": false,
+    "created_at": "2026-04-01T08:30:00",
+    "last_seen": "2026-04-01T08:30:00"
+  }
+}
+
+
+STEP 5: REGISTER SECOND SUPPORT ENGINEER
+──────────────────────────────────────────
+
+Endpoint: POST /api/engineer/register
+Authorization: Bearer {admin_token} (still authorized)
+Request:
+{
+  "name": "Bob Support",
+  "email": "bob@company-support.com",
+  "password": "BobPass@2026",
+  "department": "Billing Support"
+}
+
+Response (201):
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEwMiwidHlwZSI6ImVuZ2luZWVyIiwiZW1haWwiOiJib2JAY29tcGFueS1z...",
+  "refresh_token": "...",
+  "token_type": "bearer",
+  "user": {
+    "support_id": 102,
+    "name": "Bob Support",
+    "email": "bob@company-support.com",
+    "role_id": 2,
+    "department": "Billing Support",
+    "is_active": true,
+    "is_online": false,
+    "created_at": "2026-04-01T08:45:00",
+    "last_seen": "2026-04-01T08:45:00"
+  }
+}
+
+
+STEP 6: CUSTOMER REGISTERS FOR SUPPORT
+────────────────────────────────────────
+
+Endpoint: POST /api/customer/register
+Authorization: None (public endpoint)
+Request:
+{
+  "name": "Michael Johnson",
+  "email": "michael@clientcompany.com",
+  "password": "ClientPass@123"
+}
+
+Response (201):
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInR5cGUiOiJjdXN0b21lciIsImVtYWlsIjoibWljaGFlbEBjbGllbnRjb21w...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInR5cGUiOiJjdXN0b21lciIsImV4cCI6MTYxOTMzMjAwMH0...",
+  "token_type": "bearer",
+  "user": {
+    "customer_id": 1,
+    "name": "Michael Johnson",
+    "email": "michael@clientcompany.com",
+    "is_active": true,
+    "created_at": "2026-04-01T09:00:00",
+    "last_login": null
+  }
+}
+
+
+STEP 7: CUSTOMER VIEWS OWN PROFILE
+───────────────────────────────────
+
+Customer authorizes with their access token
+Endpoint: GET /api/customer/me
+Authorization: Bearer {customer_token}
+Request: None (no body needed)
+
+Response (200):
+{
+  "customer_id": 1,
+  "name": "Michael Johnson",
+  "email": "michael@clientcompany.com",
+  "is_active": true,
+  "created_at": "2026-04-01T09:00:00",
+  "last_login": "2026-04-01T09:05:00"
+}
+
+
+STEP 8: ENGINEERS VIEW THEIR PROFILES
+──────────────────────────────────────
+
+Alice engineer authorizes with her token
+Endpoint: GET /api/engineer/me
+Authorization: Bearer {alice_token}
+
+Response (200):
+{
+  "support_id": 101,
+  "name": "Alice Support",
+  "email": "alice@company-support.com",
+  "role_id": 2,
+  "department": "Technical Support",
+  "is_active": true,
+  "is_online": false,
+  "created_at": "2026-04-01T08:30:00",
+  "last_seen": "2026-04-01T09:10:00"
+}
+
+Bob engineer authorizes with his token
+Endpoint: GET /api/engineer/me
+Authorization: Bearer {bob_token}
+
+Response (200):
+{
+  "support_id": 102,
+  "name": "Bob Support",
+  "email": "bob@company-support.com",
+  "role_id": 2,
+  "department": "Billing Support",
+  "is_active": true,
+  "is_online": false,
+  "created_at": "2026-04-01T08:45:00",
+  "last_seen": "2026-04-01T09:12:00"
+}
+
+
+DATABASE STATE AFTER SCENARIO:
+───────────────────────────────
+
+support_engineers collection:
+  {
+    "support_id": 100,
+    "name": "System Administrator",
+    "email": "admin@company-support.com",
+    "role_id": 1,
+    "is_active": true
+  }
+  {
+    "support_id": 101,
+    "name": "Alice Support",
+    "email": "alice@company-support.com",
+    "role_id": 2,
+    "is_active": true
+  }
+  {
+    "support_id": 102,
+    "name": "Bob Support",
+    "email": "bob@company-support.com",
+    "role_id": 2,
+    "is_active": true
+  }
+
+customers collection:
+  {
+    "customer_id": 1,
+    "name": "Michael Johnson",
+    "email": "michael@clientcompany.com",
+    "is_active": true,
+    "last_login": 2026-04-01T09:05:00
+  }
+
+roles collection:
+  {
+    "role_id": 1,
+    "role_name": "admin",
+    "permissions": [...]
+  }
+  {
+    "role_id": 2,
+    "role_name": "support",
+    "permissions": [...]
+  }
+
+
+================================================================================
+SECTION 8: COMMON ERRORS & SOLUTIONS
+================================================================================
+
+ERROR: 401 Unauthorized
+
+Possible causes & solutions:
+1. "Missing Authorization header"
+   Solution: Click Authorize button at top-right in Swagger UI
+
+2. "Invalid Authorization header format. Use: Bearer {token}"
+   Solution: Make sure token is formatted as "Bearer {token}" (with space)
+
+3. "Invalid token type. Expected 'customer' but got 'engineer'"
+   Solution: Use /api/customer/login for customer endpoints
+   
+4. "Invalid or expired token. Token may have expired"
+   Solution: Token expires after 30 min. Login again to get fresh token
+
+
+ERROR: 403 Forbidden
+
+Possible causes & solutions:
+1. "Admin access required. Your role_id is 2"
+   Solution: Login with admin account (role_id=1) to register engineers
+
+2. "Engineer account is inactive"
+   Solution: Admin must activate account (feature coming soon)
+
+
+ERROR: 400 Bad Request
+
+Possible causes & solutions:
+1. "Email already registered"
+   Solution: Use a different email address
+
+2. "Admin user already exists"
+   Solution: /bootstrap/admin only works once
+   Use /api/engineer/login to login after first admin created
+
+
+ERROR: 422 Unprocessable Entity
+
+Possible causes:
+1. Invalid email format
+2. Password too short
+3. Missing required fields
+4. Wrong data type
+
+Solution: Check request body fields match schema
+
+
+ERROR: 500 Internal Server Error
+
+Causes:
+1. MongoDB not running
+2. Database connection failed
+3. Unexpected server error
+
+Solution:
+  Check server console for error details
+  Restart MongoDB: mongod --dbpath C:\path\to\data
+  Restart server: python -m uvicorn app.main:app --reload
+
+
+================================================================================
+SECTION 9: TOKEN STRUCTURE & SECURITY
+================================================================================
+
+ACCESS TOKEN STRUCTURE:
+The token is a JWT (JSON Web Token) with three parts separated by dots:
+
+Part 1 (Header):
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+
+Part 2 (Payload):
+{
+  "sub": 1,              ← user ID (customer_id or support_id)
+  "type": "customer",    ← "customer" or "engineer"
+  "email": "user@...",   ← user email
+  "exp": 1616743700,     ← expiration timestamp
+  "iat": 1616740000      ← issued at timestamp
+}
+
+Part 3 (Signature):
+HMACSHA256(base64(part1) + "." + base64(part2), SECRET_KEY)
+
+Example access token:
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInR5cGUiOiJjdXN0b21lciIsImVtYWlsIjoic2FyYWguam9obm9zbkBjb21wYW55LmNvbSIsImV4cCI6MTYxNjc0MzcwMCwiaWF0IjoxNjE2NzQwMDAwfQ.xyz123...
+
+
+REFRESH TOKEN STRUCTURE:
+Similar to access token but with:
+- Longer expiration (7 days vs 30 minutes)
+- type: "refresh" field
+- Used only to request new access tokens
+
+Example:
+{
+  "sub": 1,
+  "type": "refresh",
+  "exp": 1619332000,
+  "iat": 1616740000
+}
+
+
+TOKEN VALIDATION PROCESS:
+1. Extract Authorization header
+2. Split by space: "Bearer {token}"
+3. Decode JWT signature using SECRET_KEY
+4. Verify signature matches
+5. Check expiration (exp > current_time)
+6. Extract payload claims (sub, type, email)
+7. Allow or deny access based on validation
+
+Token expires after 30 minutes. After expiration:
+- All endpoints return 401 Unauthorized
+- User must login again
+- New token is issued
+
+
+================================================================================
+SECTION 10: SETTING UP YOUR FIRST ADMIN
+================================================================================
+
+FIRST TIME SETUP:
+
+1. Start server:
+   python -m uvicorn app.main:app --reload
+
+2. Open Swagger UI:
+   http://localhost:8000/docs
+
+3. Find: POST /bootstrap/admin
+   Click on it to expand
+
+4. Click "Try it out" button
+
+5. Enter in request body:
+{
+  "email": "admin@company.com",
+  "password": "YourSecurePassword123",
+  "name": "System Admin"
+}
+
+6. Click "Execute" button
+
+7. You should see "201 Created" with admin details
+
+8. Save the admin email and password securely!
+
+9. Now you can:
+   - Login as admin with POST /api/engineer/login
+   - Register engineers with POST /api/engineer/register
+   - Build ticket system on top of this authentication
+
+
+================================================================================
+END OF COMPLETE APPLICATION GUIDE
+================================================================================
+
+This guide covers:
+✓ Complete customer flow from registration to profile access
+✓ Complete engineer flow from admin creation to login
+✓ All endpoints with exact request/response examples
+✓ Error scenarios with solutions
+✓ Real-world usage scenario
+✓ Security & token architecture
+
+For more details, see:
+- API_DOCUMENTATION.txt (API reference)
+- QUICK_START.txt (Quick setup)
+- SWAGGER_UI_TESTING.txt (Swagger guide)
+- TOKEN_VERIFICATION_FIX.txt (Token fixes)
+- DEBUG_401_ERROR.txt (Debugging guide)
