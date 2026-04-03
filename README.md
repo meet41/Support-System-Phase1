@@ -194,7 +194,7 @@ pip install fastapi uvicorn pymongo pydantic-settings PyJWT bcrypt python-multip
 docker pull mongo:latest
 
 # Run MongoDB container
-docker run -d -p 27017:27017 --name mongodb mongo:latest
+
 
 # Verify connection
 docker logs mongodb
@@ -249,7 +249,7 @@ Located at: `support-system-phase1/app/.env`
 
 ```env
 # MongoDB Configuration
-MONGODB_URL=mongodb://localhost:27017
+MONGODB_URL
 DATABASE_NAME=support_system_db
 
 # JWT Configuration
@@ -280,7 +280,7 @@ SESSION_EXPIRE_MINUTES=60
 SECRET_KEY=your-very-long-and-secure-secret-key-minimum-32-characters
 COOKIE_SECURE=True
 COOKIE_SAMESITE=strict
-MONGODB_URL=mongodb+srv://user:password@cluster.mongodb.net/database
+MONGODB_URL
 
 # Add database authentication
 MONGODB_USERNAME=your_username
