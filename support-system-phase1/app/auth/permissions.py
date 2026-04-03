@@ -222,10 +222,11 @@ class PermissionManager:
                 headers={"WWW-Authenticate": "Bearer"}
             )
         
-        # Verify access token
+        # Verify access token (also checks type == "access" internally)
         payload = jwt_handler.verify_access_token(token)
         
-        if not payload or payload.get("type") != "access":
+        # Issue #6: verify_access_token already validates type; one check is enough
+        if not payload:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired access token",
@@ -241,6 +242,13 @@ class PermissionManager:
             )
         
         customer_id = payload.get("sub")
+        # Issue #5: validate sub claim is present
+        if not customer_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token - customer ID (sub) not found in token payload",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
         return {"customer_id": customer_id, "payload": payload}
 
     async def get_current_engineer(self, request: Request) -> Dict[str, Any]:
@@ -254,10 +262,11 @@ class PermissionManager:
                 headers={"WWW-Authenticate": "Bearer"}
             )
         
-        # Verify access token
+        # Verify access token (also checks type == "access" internally)
         payload = jwt_handler.verify_access_token(token)
         
-        if not payload or payload.get("type") != "access":
+        # Issue #6: verify_access_token already validates type; one check is enough
+        if not payload:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired access token",
@@ -273,6 +282,13 @@ class PermissionManager:
             )
         
         engineer_id = payload.get("sub")
+        # Issue #5: validate sub claim is present
+        if not engineer_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token - engineer ID (sub) not found in token payload",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
         return {"engineer_id": engineer_id, "payload": payload}
 
     async def check_admin(self, current_engineer: dict):

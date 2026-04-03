@@ -163,8 +163,9 @@
 
 
 
-from fastapi import APIRouter, HTTPException, status, Depends, Response, Request, Query
-from datetime import timedelta, datetime
+from fastapi import APIRouter, HTTPException, status, Depends, Response, Request
+from datetime import datetime
+from pydantic import BaseModel
 from database import db
 from schemas.support_engineer import (
     EngineerLogin, 
@@ -175,6 +176,12 @@ from utils.security import security_service
 from auth.jwt_handler import jwt_handler
 from auth.permissions import permission_manager
 from config import settings
+
+
+class RefreshTokenRequest(BaseModel):
+    """Request body for refresh token endpoint (Issue #1)"""
+    refresh_token: str
+
 
 router = APIRouter(prefix="/api/engineer", tags=["Engineer Auth"])
 
@@ -243,15 +250,12 @@ async def login_engineer(credentials: EngineerLogin, response: Response):
         }
     )
     
-    # Store refresh token in database
+    # Store refresh token in database (Issue #9: expires_at removed – JWT exp is the source of truth)
     refresh_token_doc = {
         "user_id": engineer["support_id"],
         "user_type": "engineer",
         "token": refresh_token,
         "is_active": True,
-        "expires_at": datetime.utcnow() + timedelta(
-            minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES
-        ),
         "created_at": datetime.utcnow(),
         "revoked_at": None
     }
@@ -269,10 +273,22 @@ async def login_engineer(credentials: EngineerLogin, response: Response):
         httponly=settings.COOKIE_HTTPONLY,
         samesite=settings.COOKIE_SAMESITE
     )
+
+    # Issue #2: store refresh token in HttpOnly cookie; do not expose it in the JSON body
+    response.set_cookie(
+        key=settings.REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        expires=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        path=settings.COOKIE_PATH,
+        domain=settings.COOKIE_DOMAIN,
+        secure=settings.COOKIE_SECURE,
+        httponly=True,
+        samesite=settings.COOKIE_SAMESITE
+    )
     
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": {
             "support_id": engineer["support_id"],
@@ -350,9 +366,16 @@ async def logout_engineer(
         }
     )
     
-    # Clear cookie
+    # Clear access token cookie
     response.delete_cookie(
         key=settings.COOKIE_NAME,
+        path=settings.COOKIE_PATH,
+        domain=settings.COOKIE_DOMAIN
+    )
+
+    # Issue #2: also clear the refresh token cookie
+    response.delete_cookie(
+        key=settings.REFRESH_COOKIE_NAME,
         path=settings.COOKIE_PATH,
         domain=settings.COOKIE_DOMAIN
     )
@@ -366,47 +389,101 @@ async def logout_engineer(
 async def refresh_access_token(
     request: Request,
     response: Response,
-    refresh_token: str = Query(..., description="Refresh token from login response")
+    refresh_request: RefreshTokenRequest = None
 ):
-    """Refresh access token using refresh token from query parameter"""
+    """
+    Refresh access token using the refresh token.
+    - Reads refresh token from HttpOnly cookie (browser) or request body (API clients)
+    - Issue #1:  token is never passed as a URL query parameter
+    - Issue #3:  implements token rotation (old token invalidated, new one issued)
+    - Issue #10: validates user_type == 'engineer'
+    """
     database = db.get_db()
-    
-    # Verify refresh token
+
+    # Issue #1 & #2: prefer the HttpOnly cookie; fall back to the request body
+    refresh_token = request.cookies.get(settings.REFRESH_COOKIE_NAME)
+    if not refresh_token and refresh_request:
+        refresh_token = refresh_request.refresh_token
+
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token not provided"
+        )
+
+    # Verify refresh token signature and expiry
     payload = jwt_handler.verify_refresh_token(refresh_token)
-    
+
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token"
         )
-    
+
     user_id = payload.get("sub")
     user_type = payload.get("user_type")
-    
-    # Check if token is still active
+
+    # Issue #10: enforce user_type on this endpoint
+    if user_type != "engineer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token type. Expected 'engineer' but got '{user_type}'"
+        )
+
+    # Issue #5: validate sub claim
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token - engineer ID (sub) not found"
+        )
+
+    # Check if token is still active in database
     stored_token = database.refresh_tokens.find_one({
         "user_id": user_id,
-        "user_type": user_type,
+        "user_type": "engineer",
         "token": refresh_token,
         "is_active": True
     })
-    
+
     if not stored_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token is revoked or invalid"
         )
-    
-    # Create new access token
+
+    # Issue #3: token rotation – invalidate the old token before issuing a new one
+    database.refresh_tokens.update_one(
+        {"_id": stored_token["_id"]},
+        {"$set": {"is_active": False, "revoked_at": datetime.utcnow()}}
+    )
+
+    # Create new tokens
     new_access_token = jwt_handler.create_access_token(
         data={
             "sub": user_id,
-            "user_type": user_type,
+            "user_type": "engineer",
             "email": payload.get("email")
         }
     )
-    
-    # Set new access token in cookie
+    new_refresh_token = jwt_handler.create_refresh_token(
+        data={
+            "sub": user_id,
+            "user_type": "engineer",
+            "email": payload.get("email")
+        }
+    )
+
+    # Persist new refresh token (Issue #9: no expires_at – JWT exp is the source of truth)
+    database.refresh_tokens.insert_one({
+        "user_id": user_id,
+        "user_type": "engineer",
+        "token": new_refresh_token,
+        "is_active": True,
+        "created_at": datetime.utcnow(),
+        "revoked_at": None
+    })
+
+    # Set new access token cookie
     response.set_cookie(
         key=settings.COOKIE_NAME,
         value=new_access_token,
@@ -418,7 +495,20 @@ async def refresh_access_token(
         httponly=settings.COOKIE_HTTPONLY,
         samesite=settings.COOKIE_SAMESITE
     )
-    
+
+    # Issue #2: update refresh token cookie (HttpOnly, never exposed to JS)
+    response.set_cookie(
+        key=settings.REFRESH_COOKIE_NAME,
+        value=new_refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        expires=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        path=settings.COOKIE_PATH,
+        domain=settings.COOKIE_DOMAIN,
+        secure=settings.COOKIE_SECURE,
+        httponly=True,
+        samesite=settings.COOKIE_SAMESITE
+    )
+
     return {
         "access_token": new_access_token,
         "token_type": "bearer",

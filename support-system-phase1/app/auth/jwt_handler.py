@@ -98,9 +98,10 @@ class JWTHandler:
             "type": "access"
         })
         
+        # Issue #4: use a dedicated secret for access tokens
         encoded_jwt = jwt.encode(
             to_encode, 
-            settings.SECRET_KEY, 
+            settings.ACCESS_TOKEN_SECRET, 
             algorithm=settings.ALGORITHM
         )
         return encoded_jwt
@@ -118,20 +119,27 @@ class JWTHandler:
             "type": "refresh"
         })
         
+        # Issue #4: use a dedicated secret for refresh tokens
         encoded_jwt = jwt.encode(
             to_encode, 
-            settings.SECRET_KEY, 
+            settings.REFRESH_TOKEN_SECRET, 
             algorithm=settings.ALGORITHM
         )
         return encoded_jwt
 
     @staticmethod
-    def decode_token(token: str) -> Optional[Dict[str, Any]]:
-        """Decode and validate JWT token"""
+    def decode_token(token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
+        """Decode and validate JWT token using the correct per-type secret"""
         try:
+            # Issue #4: select secret based on token type
+            secret = (
+                settings.ACCESS_TOKEN_SECRET
+                if token_type == "access"
+                else settings.REFRESH_TOKEN_SECRET
+            )
             payload = jwt.decode(
                 token, 
-                settings.SECRET_KEY, 
+                secret, 
                 algorithms=[settings.ALGORITHM]
             )
             return payload
@@ -143,7 +151,7 @@ class JWTHandler:
     @staticmethod
     def verify_access_token(token: str) -> Optional[Dict[str, Any]]:
         """Verify access token specifically"""
-        payload = JWTHandler.decode_token(token)
+        payload = JWTHandler.decode_token(token, token_type="access")
         if payload and payload.get("type") == "access":
             return payload
         return None
@@ -151,7 +159,7 @@ class JWTHandler:
     @staticmethod
     def verify_refresh_token(token: str) -> Optional[Dict[str, Any]]:
         """Verify refresh token specifically"""
-        payload = JWTHandler.decode_token(token)
+        payload = JWTHandler.decode_token(token, token_type="refresh")
         if payload and payload.get("type") == "refresh":
             return payload
         return None
